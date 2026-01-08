@@ -3,12 +3,16 @@ Audio Source Separation Module
 
 Wrapper around Demucs for separating audio into stems (vocals, drums, bass, other).
 Optimized for lyric extraction by isolating vocal tracks.
+Uses Demucs Python API with soundfile for saving to avoid torchaudio/torchcodec issues.
 """
 
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+import numpy as np
+import soundfile as sf
+import torch
 
 from core.context import ProcessingContext
 from utils.gpu_manager import GPUManager, GPUMemoryContext
@@ -88,7 +92,7 @@ class Separator:
 
     def _separate_audio(self, audio_path: Path) -> Dict[str, Path]:
         """
-        Separate audio using Demucs.
+        Separate audio using Demucs Python API.
 
         Args:
             audio_path: Path to audio file
@@ -96,12 +100,14 @@ class Separator:
         Returns:
             Dictionary with stem paths
         """
-        model = self.config.get("model", "htdemucs")
+        from demucs.apply import apply_model
+        from demucs.pretrained import get_model
+
+        model_name = self.config.get("model", "htdemucs")
         device = self._get_device()
         shifts = self.config.get("shifts", 1)
         split = self.config.get("split", True)
         overlap = self.config.get("overlap", 0.25)
-        jobs = self.config.get("jobs", 0)
 
         # Output directory
         output_dir = self.context.get_path("stems")
@@ -109,52 +115,90 @@ class Separator:
 
         self.logger.info(
             "Running Demucs",
-            model=model,
+            model=model_name,
             device=device,
             shifts=shifts,
             split=split,
         )
 
-        # Build demucs command
-        cmd = [
-            "demucs",
-            "--two-stems=vocals",  # Only separate vocals (faster)
-            f"--name={model}",
-            f"--device={device}",
-            f"--shifts={shifts}",
-            f"--overlap={overlap}",
-            f"--out={output_dir}",
-        ]
-
-        if split:
-            cmd.append("--split")
-
-        if jobs > 0:
-            cmd.append(f"--jobs={jobs}")
-
-        cmd.append(str(audio_path))
-
-        # Run demucs
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            # Load model
+            model = get_model(model_name)
+            model.to(device)
+            model.eval()
 
-            self.logger.debug("Demucs stdout", output=result.stdout[-500:] if result.stdout else "")
+            # Load audio using soundfile to avoid torchaudio/torchcodec issues
+            audio_data, sr = sf.read(str(audio_path))
+            # Convert to torch tensor: soundfile returns (samples, channels), we need (channels, samples)
+            if audio_data.ndim == 1:
+                audio_data = audio_data[:, np.newaxis]
+            wav = torch.from_numpy(audio_data.T).float()
 
-        except subprocess.CalledProcessError as e:
-            self.logger.error("Demucs failed", stderr=e.stderr[-500:] if e.stderr else "")
-            raise SeparationError(f"Demucs command failed: {e.stderr}") from e
-        except FileNotFoundError:
-            raise SeparationError(
-                "Demucs not found. Install it with: pip install demucs"
-            ) from None
+            # Resample if needed using scipy to avoid torchaudio
+            if sr != model.samplerate:
+                from scipy import signal
+                self.logger.debug(f"Resampling from {sr} to {model.samplerate}")
+                # wav shape: (channels, samples)
+                num_samples = int(wav.shape[1] * model.samplerate / sr)
+                resampled = np.zeros((wav.shape[0], num_samples), dtype=np.float32)
+                for ch in range(wav.shape[0]):
+                    resampled[ch] = signal.resample(wav[ch].numpy(), num_samples)
+                wav = torch.from_numpy(resampled)
+                sr = model.samplerate
 
-        # Find separated files
-        stems = self._find_separated_stems(audio_path, output_dir, model)
+            # Ensure stereo
+            if wav.shape[0] == 1:
+                wav = wav.repeat(2, 1)
+            elif wav.shape[0] > 2:
+                wav = wav[:2]
+
+            # Add batch dimension: (channels, samples) -> (batch, channels, samples)
+            wav = wav.unsqueeze(0).to(device)
+
+            # Apply model
+            with torch.no_grad():
+                sources = apply_model(
+                    model,
+                    wav,
+                    shifts=shifts,
+                    split=split,
+                    overlap=overlap,
+                    progress=True,
+                )
+
+            # Get source indices
+            source_names = model.sources
+            vocals_idx = source_names.index("vocals") if "vocals" in source_names else None
+
+            if vocals_idx is None:
+                raise SeparationError("Model does not have 'vocals' source")
+
+            # Extract vocals and instrumental
+            # sources shape: (batch, sources, channels, samples)
+            vocals = sources[0, vocals_idx].cpu().numpy()
+
+            # Create instrumental by summing all non-vocal sources
+            other_indices = [i for i in range(len(source_names)) if i != vocals_idx]
+            instrumental = sources[0, other_indices].sum(dim=0).cpu().numpy()
+
+            # Save using soundfile (avoids torchaudio/torchcodec issues)
+            audio_stem = audio_path.stem
+            model_output = output_dir / model_name / audio_stem
+            model_output.mkdir(parents=True, exist_ok=True)
+
+            vocals_path = model_output / "vocals.wav"
+            no_vocals_path = model_output / "no_vocals.wav"
+
+            # Transpose from (channels, samples) to (samples, channels) for soundfile
+            sf.write(str(vocals_path), vocals.T, sr)
+            sf.write(str(no_vocals_path), instrumental.T, sr)
+
+            self.logger.debug("Stems saved", vocals=str(vocals_path), instrumental=str(no_vocals_path))
+
+        except Exception as e:
+            raise SeparationError(f"Demucs separation failed: {e}") from e
+
+        stems = {"vocals": vocals_path, "instrumental": no_vocals_path}
 
         # Move to final location and update context
         self._organize_stems(stems)
@@ -186,40 +230,6 @@ class Separator:
                 return "cpu"
         else:
             return config_device
-
-    def _find_separated_stems(
-        self, audio_path: Path, output_dir: Path, model: str
-    ) -> Dict[str, Path]:
-        """
-        Find separated stem files in Demucs output directory.
-
-        Args:
-            audio_path: Original audio file path
-            output_dir: Demucs output directory
-            model: Model name used
-
-        Returns:
-            Dictionary with stem paths
-        """
-        # Demucs creates: output_dir/model_name/audio_stem/vocals.wav
-        audio_stem = audio_path.stem
-        model_output = output_dir / model / audio_stem
-
-        if not model_output.exists():
-            raise SeparationError(f"Demucs output directory not found: {model_output}")
-
-        vocals_path = model_output / "vocals.wav"
-        no_vocals_path = model_output / "no_vocals.wav"
-
-        if not vocals_path.exists():
-            raise SeparationError(f"Vocals track not found: {vocals_path}")
-
-        stems = {"vocals": vocals_path}
-
-        if no_vocals_path.exists():
-            stems["instrumental"] = no_vocals_path
-
-        return stems
 
     def _organize_stems(self, stems: Dict[str, Path]) -> None:
         """

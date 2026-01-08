@@ -102,9 +102,21 @@ class Transcriber:
         """Load Whisper model."""
         model_name = self.config.get("model", "large-v3")
         device = self.gpu_manager.get_optimal_device()
+
+        # Faster-Whisper doesn't support MPS, fall back to CPU
+        if device == "mps":
+            self.logger.warning("Faster-Whisper doesn't support MPS, using CPU")
+            device = "cpu"
+
+        # Get compute type, but ensure it's compatible with the device
         compute_type = self.config.get(
             "compute_type", self.gpu_manager.get_compute_type(device)
         )
+
+        # CPU doesn't support float16 efficiently, use int8 instead
+        if device == "cpu" and compute_type == "float16":
+            self.logger.warning("CPU doesn't support float16, using int8")
+            compute_type = "int8"
 
         self.logger.info(
             "Loading Whisper model",
