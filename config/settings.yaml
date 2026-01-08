@@ -1,0 +1,125 @@
+# LyricForge Configuration File
+# This file contains default settings for the application
+
+# Directory paths (relative to project root)
+paths:
+  data_root: "data"
+  raw: "data/raw"
+  stems: "data/stems"
+  subtitles: "data/subs"
+  output: "data/output"
+  temp: "data/temp"
+
+# Downloader settings (yt-dlp)
+downloader:
+  format: "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+  audio_format: "wav"
+  audio_quality: "0"  # Best quality
+  write_info_json: true
+  write_thumbnail: true
+  prefer_ffmpeg: true
+
+# Audio separator settings (Demucs)
+separator:
+  enabled: true
+  model: "htdemucs"  # Options: htdemucs, htdemucs_ft, mdx_extra
+  device: "auto"  # Options: auto, cpu, cuda, mps
+  shifts: 1  # Number of random shifts for better quality (higher = slower)
+  split: true  # Split audio into chunks to save VRAM
+  overlap: 0.25
+  jobs: 0  # Number of parallel jobs (0 = auto)
+
+# Transcription settings (Faster-Whisper / WhisperX)
+transcriber:
+  engine: "faster-whisper"  # Options: faster-whisper, whisperx
+  model: "large-v3"  # Options: tiny, base, small, medium, large-v2, large-v3
+  device: "auto"  # Options: auto, cpu, cuda, mps
+  compute_type: "float16"  # Options: float16, int8, int8_float16
+  language: "ja"  # ISO 639-1 code, set to null for auto-detection
+  beam_size: 5
+  vad_filter: true  # Voice Activity Detection
+  vad_parameters:
+    threshold: 0.5
+    min_speech_duration_ms: 250
+    max_speech_duration_s: 30
+    min_silence_duration_ms: 500
+    speech_pad_ms: 400
+
+# LLM Refinement settings (Ollama)
+refiner:
+  enabled: true
+  base_url: "http://localhost:11434"
+  model: "llama3.2:latest"  # Ollama model name
+  temperature: 0.3
+  max_tokens: 2000
+  timeout: 60
+  prompt_template: |
+    You are an expert in transcribing song lyrics. Given the following raw transcription from Whisper, please:
+    1. Fix any obvious transcription errors
+    2. Add appropriate line breaks at natural phrase boundaries
+    3. Maintain the original timing information (do not modify timestamps)
+    4. Correct Japanese kanji/kana if applicable
+    5. Remove filler words or non-lyrical sounds
+
+    Raw transcription:
+    {transcription}
+
+    Return the corrected lyrics in the same JSON format with timestamps preserved.
+
+# Subtitle generation settings
+subtitles:
+  format: "srt"  # Options: srt, ass, vtt
+  max_chars_per_line: 42
+  max_lines: 2
+  merge_short_segments: true
+  min_segment_duration: 1.0  # seconds
+
+  # ASS (Advanced SubStation Alpha) specific settings
+  ass:
+    font_name: "Noto Sans CJK JP"
+    font_size: 48
+    primary_color: "&H00FFFFFF"  # White
+    outline_color: "&H00000000"  # Black outline
+    back_color: "&H80000000"  # Semi-transparent black background
+    bold: true
+    italic: false
+    outline: 3
+    shadow: 2
+    alignment: 2  # Bottom center
+    margin_v: 30  # Vertical margin from edge
+
+# Video composition settings (FFmpeg)
+compositor:
+  enabled: true
+  encoder: "auto"  # Options: auto, h264_nvenc, h264_videotoolbox, libx264
+  preset: "medium"  # For libx264: ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+  crf: 20  # Constant Rate Factor (lower = better quality, 18-23 recommended)
+  pixel_format: "yuv420p"
+  audio_codec: "aac"
+  audio_bitrate: "320k"
+
+# GPU Management settings
+gpu:
+  max_vram_usage: 0.8  # Use up to 80% of available VRAM
+  force_cpu: false
+  prefer_mps: true  # Prefer Metal Performance Shaders on macOS
+  cuda_visible_devices: null  # Comma-separated GPU indices, null for all
+
+# Logging settings
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/lyric_forge.log"
+  console: true
+  rich_console: true  # Use rich library for colored output
+
+# Obsidian integration (Milestone 4)
+obsidian:
+  enabled: false
+  vault_path: null  # Path to Obsidian vault
+  notes_folder: "Music Library"
+  template: "templates/song_note.md"
+  auto_create_note: true
+  include_metadata: true
+  include_lyrics: true
+  include_llm_analysis: true

@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""
+LyricForge - Main CLI Entry Point
+
+Command-line interface for the LyricForge pipeline.
+"""
+
+import sys
+from pathlib import Path
+from typing import List, Optional
+
+import click
+
+from core.pipeline import run_pipeline
+
+
+@click.group()
+@click.version_option(version="0.1.0", prog_name="LyricForge")
+def cli():
+    """
+    LyricForge - The Lyric Foundry
+
+    Transform videos into beautifully subtitled content with AI-powered transcription.
+    """
+    pass
+
+
+@cli.command()
+@click.argument("url", type=str)
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    default="config/settings.yaml",
+    help="Path to configuration file",
+)
+@click.option(
+    "--stages",
+    "-s",
+    multiple=True,
+    type=click.Choice(["download", "separate", "transcribe", "refine", "subtitle", "compose"]),
+    help="Stages to execute (can be specified multiple times)",
+)
+@click.option(
+    "--language",
+    "-l",
+    type=str,
+    help="Language code (e.g., 'en', 'ja', 'zh') - overrides config",
+)
+@click.option(
+    "--model",
+    "-m",
+    type=click.Choice(["tiny", "base", "small", "medium", "large-v2", "large-v3"]),
+    help="Whisper model size - overrides config",
+)
+@click.option(
+    "--device",
+    "-d",
+    type=click.Choice(["auto", "cuda", "mps", "cpu"]),
+    help="Compute device - overrides config",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output directory - overrides config",
+)
+def process(
+    url: str,
+    config: Path,
+    stages: tuple,
+    language: Optional[str],
+    model: Optional[str],
+    device: Optional[str],
+    output_dir: Optional[Path],
+):
+    """
+    Process a video URL through the LyricForge pipeline.
+
+    URL: Video URL from YouTube, Vimeo, or other supported platforms.
+
+    Examples:
+
+        # Basic usage (download + transcribe)
+        lyric-forge process "https://www.youtube.com/watch?v=VIDEO_ID"
+
+        # Specify language and model
+        lyric-forge process "URL" --language ja --model large-v3
+
+        # Run specific stages
+        lyric-forge process "URL" --stages download --stages transcribe
+
+        # Use CPU only
+        lyric-forge process "URL" --device cpu
+    """
+    try:
+        # Convert stages tuple to list
+        stages_list = list(stages) if stages else None
+
+        # Display info
+        click.echo(f"🔨 LyricForge - Processing: {url}")
+        if stages_list:
+            click.echo(f"📋 Stages: {', '.join(stages_list)}")
+        click.echo()
+
+        # Run pipeline
+        context = run_pipeline(
+            url=url,
+            config_path=str(config),
+            stages=stages_list,
+        )
+
+        # Display results
+        click.echo()
+        click.echo("✅ Processing completed successfully!")
+        click.echo(f"⏱️  Duration: {context.get_duration():.2f}s")
+        click.echo()
+        click.echo("📁 Output files:")
+
+        if context.raw_video_path and context.raw_video_path.exists():
+            click.echo(f"   Video: {context.raw_video_path}")
+        if context.raw_audio_path and context.raw_audio_path.exists():
+            click.echo(f"   Audio: {context.raw_audio_path}")
+        if context.raw_transcript_path and context.raw_transcript_path.exists():
+            click.echo(f"   Transcript: {context.raw_transcript_path}")
+        if context.subtitle_path and context.subtitle_path.exists():
+            click.echo(f"   Subtitles: {context.subtitle_path}")
+        if context.output_video_path and context.output_video_path.exists():
+            click.echo(f"   Output: {context.output_video_path}")
+
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    default="config/settings.yaml",
+    help="Path to configuration file",
+)
+def info(config: Path):
+    """
+    Display system and GPU information.
+    """
+    try:
+        from core.context import ConfigLoader
+        from utils.gpu_manager import create_gpu_manager, print_device_info
+
+        # Load config
+        config_dict = ConfigLoader.load_config(str(config))
+
+        # Create GPU manager
+        gpu_manager = create_gpu_manager(config_dict)
+
+        # Print info
+        print_device_info(gpu_manager)
+
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+def version():
+    """
+    Display version information.
+    """
+    click.echo("LyricForge v0.1.0")
+    click.echo("The Lyric Foundry - AI-Powered Video Transcription")
+    click.echo()
+    click.echo("Milestone 1: The Backbone ✅")
+    click.echo("  - Download (yt-dlp)")
+    click.echo("  - Transcription (Faster-Whisper)")
+    click.echo()
+    click.echo("Upcoming:")
+    click.echo("  - Milestone 2: Vocal separation + LLM refinement")
+    click.echo("  - Milestone 3: ASS subtitles + FFmpeg composition")
+    click.echo("  - Milestone 4: Obsidian integration")
+
+
+def main():
+    """Main entry point."""
+    cli()
+
+
+if __name__ == "__main__":
+    main()
