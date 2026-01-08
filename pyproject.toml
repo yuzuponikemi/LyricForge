@@ -1,6 +1,6 @@
 [project]
 name = "lyric-forge"
-version = "0.2.0"
+version = "0.2.5"
 description = "A modular pipeline for video lyric extraction, refinement, and subtitle generation"
 readme = "README.md"
 requires-python = ">=3.10"

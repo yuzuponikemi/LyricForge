@@ -15,7 +15,7 @@ from core.pipeline import run_pipeline
 
 
 @click.group()
-@click.version_option(version="0.2.0", prog_name="LyricForge")
+@click.version_option(version="0.2.5", prog_name="LyricForge")
 def cli():
     """
     LyricForge - The Lyric Foundry
@@ -38,7 +38,7 @@ def cli():
     "--stages",
     "-s",
     multiple=True,
-    type=click.Choice(["download", "separate", "transcribe", "refine", "subtitle", "compose"]),
+    type=click.Choice(["download", "calibrate", "separate", "transcribe", "refine", "subtitle", "compose"]),
     help="Stages to execute (can be specified multiple times)",
 )
 @click.option(
@@ -65,6 +65,12 @@ def cli():
     type=click.Path(path_type=Path),
     help="Output directory - overrides config",
 )
+@click.option(
+    "--auto-calibrate",
+    "-a",
+    is_flag=True,
+    help="Automatically calibrate parameters by analyzing a 30s sample",
+)
 def process(
     url: str,
     config: Path,
@@ -73,6 +79,7 @@ def process(
     model: Optional[str],
     device: Optional[str],
     output_dir: Optional[Path],
+    auto_calibrate: bool,
 ):
     """
     Process a video URL through the LyricForge pipeline.
@@ -83,6 +90,9 @@ def process(
 
         # Basic usage (download + transcribe)
         lyric-forge process "https://www.youtube.com/watch?v=VIDEO_ID"
+
+        # Auto-calibrate for optimal quality (recommended for live/noisy audio)
+        lyric-forge process "URL" --auto-calibrate
 
         # Specify language and model
         lyric-forge process "URL" --language ja --model large-v3
@@ -96,6 +106,16 @@ def process(
     try:
         # Convert stages tuple to list
         stages_list = list(stages) if stages else None
+
+        # Add calibration stage if auto-calibrate is enabled
+        if auto_calibrate:
+            if stages_list is None:
+                # Insert calibrate after download in default pipeline
+                stages_list = ["download", "calibrate", "separate", "transcribe", "refine"]
+            elif "calibrate" not in stages_list and "download" in stages_list:
+                # Insert calibrate after download
+                download_idx = stages_list.index("download")
+                stages_list.insert(download_idx + 1, "calibrate")
 
         # Build config overrides
         config_overrides = {}
@@ -188,7 +208,7 @@ def version():
     """
     Display version information.
     """
-    click.echo("LyricForge v0.2.0")
+    click.echo("LyricForge v0.2.5")
     click.echo("The Lyric Foundry - AI-Powered Video Transcription")
     click.echo()
     click.echo("Milestone 1: The Backbone ✅")
@@ -198,6 +218,7 @@ def version():
     click.echo("Milestone 2: The Ear & The Brain ✅")
     click.echo("  - Vocal separation (Demucs)")
     click.echo("  - LLM refinement (Ollama)")
+    click.echo("  - Auto-calibration for optimal parameters")
     click.echo()
     click.echo("Upcoming:")
     click.echo("  - Milestone 3: ASS subtitles + FFmpeg composition")

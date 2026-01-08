@@ -8,6 +8,7 @@ Implements the Pipeline Pattern with clear separation of concerns.
 from typing import Any, Dict, Optional
 
 from core.context import ProcessingContext, create_context
+from modules.calibrator import Calibrator, create_calibrator
 from modules.downloader import Downloader, create_downloader
 from modules.refiner import Refiner, create_refiner
 from modules.separator import Separator, create_separator
@@ -122,6 +123,8 @@ class PipelineManager:
 
         if stage == "download":
             self._stage_download(context, logger)
+        elif stage == "calibrate":
+            self._stage_calibrate(context, logger)
         elif stage == "separate":
             self._stage_separate(context, logger)
         elif stage == "transcribe":
@@ -212,6 +215,41 @@ class PipelineManager:
         # Context is already updated by refiner
         if result:
             logger.debug("Refinement result saved", path=str(result.get("path")))
+
+    def _stage_calibrate(
+        self,
+        context: ProcessingContext,
+        logger: ContextualLogger,
+    ) -> None:
+        """
+        Execute calibration stage to find optimal parameters.
+
+        Args:
+            context: Processing context
+            logger: Contextual logger
+        """
+        calibrator = create_calibrator(context, logger, self.gpu_manager)
+
+        # Get sample duration from config
+        sample_duration = context.config.get("calibrator", {}).get("sample_duration", 30)
+
+        # Run calibration
+        result = calibrator.calibrate(sample_duration=sample_duration)
+
+        # Apply optimal parameters to context config
+        optimal_params = result.get("parameters", {})
+
+        if "separator" in optimal_params:
+            context.config["separator"].update(optimal_params["separator"])
+            logger.info("Applied optimal separator parameters", params=optimal_params["separator"])
+
+        if "transcriber" in optimal_params:
+            context.config["transcriber"].update(optimal_params["transcriber"])
+            logger.info("Applied optimal transcriber parameters", params=optimal_params["transcriber"])
+
+        # Store calibration result in metadata
+        context.update_metadata("calibration_preset", result.get("name"))
+        context.update_metadata("calibration_score", result.get("score"))
 
     def _log_system_info(self, logger: ContextualLogger) -> None:
         """

@@ -18,9 +18,11 @@ LyricForge is a modular, production-grade application for extracting, refining, 
 #### Milestone 2: The Ear & The Brain ✅
 - **Vocal Separation**: Isolate vocals from instrumentals using Demucs
 - **LLM Refinement**: Correct transcription errors using Ollama
+- **Auto-Calibration**: Automatically find optimal parameters for challenging audio
 - **Smart Memory Management**: Automatic VRAM cleanup between stages
 - **Timestamp Preservation**: Maintains precise timing through refinement
 - **Batch Processing**: Efficient processing with contextual awareness
+- **Quality Metrics**: SNR analysis and transcription quality scoring
 
 ### Upcoming
 
@@ -154,6 +156,9 @@ This runs the complete Milestone 2 pipeline:
 ### Advanced Usage
 
 ```bash
+# Auto-calibrate parameters (RECOMMENDED for live music or noisy videos)
+python main.py process "URL" --auto-calibrate
+
 # Specify language and model size
 python main.py process "URL" --language ja --model large-v3
 
@@ -163,12 +168,44 @@ python main.py process "URL" --device cpu
 # Run specific stages only
 python main.py process "URL" --stages download --stages transcribe
 
+# Manual calibration: run calibrate stage explicitly
+python main.py process "URL" --stages download --stages calibrate --stages separate --stages transcribe
+
 # Skip LLM refinement (faster, but less accurate)
 python main.py process "URL" --stages download --stages separate --stages transcribe
 
 # Use custom config file
 python main.py process "URL" --config my_config.yaml
 ```
+
+### 🎯 Auto-Calibration Feature
+
+For challenging audio (live performances, noisy environments, poor recording quality), LyricForge can automatically find the best parameters:
+
+```bash
+python main.py process "URL" --auto-calibrate
+```
+
+**How it works:**
+1. Extracts a 30-second sample from the middle of the video
+2. Tests 4 different parameter presets (studio, live, noisy, fast)
+3. Evaluates each preset using:
+   - **SNR (Signal-to-Noise Ratio)**: Separation quality
+   - **Transcription Quality**: Word confidence and segment consistency
+   - **Text Analysis**: Detects repetitions and gibberish
+4. Automatically applies the best parameters for the full processing
+
+**When to use:**
+- ✅ Live concert recordings
+- ✅ Videos with background noise or crowd sounds
+- ✅ Poor audio quality or low bitrate videos
+- ✅ When default parameters don't work well
+
+**Presets tested:**
+- **Studio**: Optimized for clean studio recordings (fast)
+- **Live**: Higher quality settings for live performances
+- **Noisy**: Maximum quality for challenging audio
+- **Fast**: Minimal processing for speed
 
 ### Output
 

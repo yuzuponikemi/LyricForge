@@ -66,6 +66,17 @@ refiner:
 
     Return the corrected lyrics in the same JSON format with timestamps preserved.
 
+# Auto-Calibration settings (Milestone 2.5)
+calibrator:
+  enabled: false  # Enable for automatic parameter tuning
+  sample_duration: 30  # Duration of sample to analyze (seconds)
+  sample_offset: null  # Offset for sample extraction (null = center of video)
+  presets:  # Predefined parameter sets to test
+    - studio
+    - live
+    - noisy
+    - fast
+
 # Subtitle generation settings
 subtitles:
   format: "srt"  # Options: srt, ass, vtt
