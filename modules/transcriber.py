@@ -62,7 +62,10 @@ class Transcriber:
         """
         if audio_path is None:
             # Try to use vocal stem if available, otherwise use raw audio
-            audio_path = self.context.vocal_stem_path or self.context.raw_audio_path
+            if self.context.vocal_stem_path and self.context.vocal_stem_path.exists():
+                audio_path = self.context.vocal_stem_path
+            else:
+                audio_path = self.context.raw_audio_path
 
         if audio_path is None or not audio_path.exists():
             raise TranscriptionError(f"Audio file not found: {audio_path}")

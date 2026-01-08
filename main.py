@@ -97,6 +97,25 @@ def process(
         # Convert stages tuple to list
         stages_list = list(stages) if stages else None
 
+        # Build config overrides
+        config_overrides = {}
+        if language:
+            config_overrides.setdefault("transcriber", {})["language"] = language
+        if model:
+            config_overrides.setdefault("transcriber", {})["model"] = model
+        if device:
+            # Override device for both transcriber and separator if needed
+            config_overrides.setdefault("transcriber", {})["device"] = device
+            config_overrides.setdefault("separator", {})["device"] = device
+            # Also override global gpu settings
+            if device == "cpu":
+                config_overrides.setdefault("gpu", {})["force_cpu"] = True
+                config_overrides.setdefault("gpu", {})["prefer_mps"] = False
+                config_overrides.setdefault("transcriber", {})["compute_type"] = "int8"
+
+        if output_dir:
+            config_overrides.setdefault("paths", {})["output"] = str(output_dir)
+
         # Display info
         click.echo(f"🔨 LyricForge - Processing: {url}")
         if stages_list:
@@ -108,6 +127,7 @@ def process(
             url=url,
             config_path=str(config),
             stages=stages_list,
+            config_overrides=config_overrides,
         )
 
         # Display results

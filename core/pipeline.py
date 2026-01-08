@@ -201,12 +201,16 @@ class PipelineManager:
             )
 
 
-def create_pipeline(config_path: str = "config/settings.yaml") -> PipelineManager:
+def create_pipeline(
+    config_path: str = "config/settings.yaml",
+    config_overrides: Optional[Dict[str, Any]] = None,
+) -> PipelineManager:
     """
     Factory function to create a pipeline manager.
 
     Args:
         config_path: Path to configuration file
+        config_overrides: Optional configuration overrides
 
     Returns:
         PipelineManager instance
@@ -214,6 +218,10 @@ def create_pipeline(config_path: str = "config/settings.yaml") -> PipelineManage
     from core.context import ConfigLoader
 
     config = ConfigLoader.load_config(config_path)
+
+    if config_overrides:
+        config = ConfigLoader.merge_configs(config, config_overrides)
+
     return PipelineManager(config)
 
 
@@ -221,6 +229,7 @@ def run_pipeline(
     url: str,
     config_path: str = "config/settings.yaml",
     stages: Optional[list[str]] = None,
+    config_overrides: Optional[Dict[str, Any]] = None,
 ) -> ProcessingContext:
     """
     Convenience function to run the pipeline.
@@ -229,9 +238,10 @@ def run_pipeline(
         url: Video URL to process
         config_path: Path to configuration file
         stages: List of stages to execute
+        config_overrides: Optional configuration overrides
 
     Returns:
         ProcessingContext with results
     """
-    pipeline = create_pipeline(config_path)
+    pipeline = create_pipeline(config_path, config_overrides)
     return pipeline.process(url, stages)
