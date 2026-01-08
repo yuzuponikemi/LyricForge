@@ -15,7 +15,7 @@ from core.pipeline import run_pipeline
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="LyricForge")
+@click.version_option(version="0.2.0", prog_name="LyricForge")
 def cli():
     """
     LyricForge - The Lyric Foundry
@@ -188,15 +188,18 @@ def version():
     """
     Display version information.
     """
-    click.echo("LyricForge v0.1.0")
+    click.echo("LyricForge v0.2.0")
     click.echo("The Lyric Foundry - AI-Powered Video Transcription")
     click.echo()
     click.echo("Milestone 1: The Backbone ✅")
     click.echo("  - Download (yt-dlp)")
     click.echo("  - Transcription (Faster-Whisper)")
     click.echo()
+    click.echo("Milestone 2: The Ear & The Brain ✅")
+    click.echo("  - Vocal separation (Demucs)")
+    click.echo("  - LLM refinement (Ollama)")
+    click.echo()
     click.echo("Upcoming:")
-    click.echo("  - Milestone 2: Vocal separation + LLM refinement")
     click.echo("  - Milestone 3: ASS subtitles + FFmpeg composition")
     click.echo("  - Milestone 4: Obsidian integration")
 

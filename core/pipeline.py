@@ -9,6 +9,8 @@ from typing import Any, Dict, Optional
 
 from core.context import ProcessingContext, create_context
 from modules.downloader import Downloader, create_downloader
+from modules.refiner import Refiner, create_refiner
+from modules.separator import Separator, create_separator
 from modules.transcriber import Transcriber, create_transcriber
 from utils.gpu_manager import GPUManager, create_gpu_manager
 from utils.logger import ContextualLogger, LyricForgeLogger, get_contextual_logger, setup_logger
@@ -26,9 +28,9 @@ class PipelineManager:
 
     Pipeline stages:
     1. Download (video/audio)
-    2. Separation (optional - Demucs, will be implemented in Milestone 2)
+    2. Separation (optional - Demucs) ✅ Milestone 2
     3. Transcription (Whisper)
-    4. Refinement (optional - LLM, will be implemented in Milestone 2)
+    4. Refinement (optional - LLM) ✅ Milestone 2
     5. Subtitle Generation (SRT/ASS, will be implemented in Milestone 3)
     6. Video Composition (optional - FFmpeg, will be implemented in Milestone 3)
     """
@@ -74,9 +76,9 @@ class PipelineManager:
         # Print GPU info
         self._log_system_info(logger)
 
-        # Default stages for Milestone 1
+        # Default stages for Milestone 2 (full pipeline with separation and refinement)
         if stages is None:
-            stages = ["download", "transcribe"]
+            stages = ["download", "separate", "transcribe", "refine"]
 
         try:
             # Execute stages
@@ -120,14 +122,12 @@ class PipelineManager:
 
         if stage == "download":
             self._stage_download(context, logger)
+        elif stage == "separate":
+            self._stage_separate(context, logger)
         elif stage == "transcribe":
             self._stage_transcribe(context, logger)
-        elif stage == "separate":
-            # Will be implemented in Milestone 2
-            logger.warning("Separation stage not yet implemented (Milestone 2)")
         elif stage == "refine":
-            # Will be implemented in Milestone 2
-            logger.warning("Refinement stage not yet implemented (Milestone 2)")
+            self._stage_refine(context, logger)
         elif stage == "subtitle":
             # Will be implemented in Milestone 3
             logger.warning("Subtitle generation not yet implemented (Milestone 3)")
@@ -158,6 +158,24 @@ class PipelineManager:
         context.raw_video_path = result["video_path"]
         context.raw_audio_path = result["audio_path"]
 
+    def _stage_separate(
+        self,
+        context: ProcessingContext,
+        logger: ContextualLogger,
+    ) -> None:
+        """
+        Execute separation stage.
+
+        Args:
+            context: Processing context
+            logger: Contextual logger
+        """
+        separator = create_separator(context, logger, self.gpu_manager)
+        result = separator.separate()
+
+        # Context is already updated by separator
+        logger.debug("Separation result saved", vocal_path=str(result.get("vocals")))
+
     def _stage_transcribe(
         self,
         context: ProcessingContext,
@@ -175,6 +193,25 @@ class PipelineManager:
 
         # Context is already updated by transcriber
         logger.debug("Transcription result saved", path=str(result["path"]))
+
+    def _stage_refine(
+        self,
+        context: ProcessingContext,
+        logger: ContextualLogger,
+    ) -> None:
+        """
+        Execute refinement stage.
+
+        Args:
+            context: Processing context
+            logger: Contextual logger
+        """
+        refiner = create_refiner(context, logger)
+        result = refiner.refine()
+
+        # Context is already updated by refiner
+        if result:
+            logger.debug("Refinement result saved", path=str(result.get("path")))
 
     def _log_system_info(self, logger: ContextualLogger) -> None:
         """

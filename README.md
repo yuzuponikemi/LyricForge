@@ -6,17 +6,24 @@ LyricForge is a modular, production-grade application for extracting, refining, 
 
 ## ✨ Features
 
-### Current (Milestone 1: The Backbone) ✅
+### Current Features ✅
 
+#### Milestone 1: The Backbone
 - **Video/Audio Download**: Support for YouTube, Vimeo, and 1000+ platforms via yt-dlp
 - **AI Transcription**: State-of-the-art speech recognition using Faster-Whisper
 - **Word-level Timestamps**: Precise timing for each word
 - **GPU Acceleration**: Automatic device selection (CUDA/MPS/CPU) with memory management
 - **Modular Architecture**: Clean separation of concerns for easy extension
 
+#### Milestone 2: The Ear & The Brain ✅
+- **Vocal Separation**: Isolate vocals from instrumentals using Demucs
+- **LLM Refinement**: Correct transcription errors using Ollama
+- **Smart Memory Management**: Automatic VRAM cleanup between stages
+- **Timestamp Preservation**: Maintains precise timing through refinement
+- **Batch Processing**: Efficient processing with contextual awareness
+
 ### Upcoming
 
-- **Milestone 2**: Vocal separation (Demucs) + LLM refinement (Ollama)
 - **Milestone 3**: ASS subtitle styling + FFmpeg video composition
 - **Milestone 4**: Obsidian knowledge base integration
 
@@ -69,6 +76,7 @@ LyricForge/
 
 - Python 3.10 or higher
 - FFmpeg (for audio/video processing)
+- Ollama (for LLM refinement) - [ollama.ai](https://ollama.ai)
 - CUDA-compatible GPU (optional, for acceleration)
 
 ### Step 1: Clone and Install Dependencies
@@ -99,7 +107,26 @@ sudo apt install ffmpeg
 **Windows:**
 Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
-### Step 3: Verify Installation
+### Step 3: Install and Setup Ollama
+
+**Install Ollama:**
+```bash
+# macOS/Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Or download from https://ollama.ai
+```
+
+**Pull a model and start the server:**
+```bash
+# Pull a recommended model (llama3.2 is good for lyric refinement)
+ollama pull llama3.2:latest
+
+# Start Ollama server (runs in background)
+ollama serve
+```
+
+### Step 4: Verify Installation
 
 ```bash
 python main.py info
@@ -112,9 +139,17 @@ This will display your system information and available compute devices.
 ### Basic Usage
 
 ```bash
-# Process a YouTube video (download + transcribe)
+# Full pipeline (download + separate + transcribe + refine)
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
+
+This runs the complete Milestone 2 pipeline:
+1. Downloads video and audio
+2. Separates vocals from instrumentals (Demucs)
+3. Transcribes vocals (Faster-Whisper)
+4. Refines lyrics with LLM (Ollama)
+
+**Note**: Make sure Ollama is running (`ollama serve`) for the refinement stage.
 
 ### Advanced Usage
 
@@ -125,8 +160,11 @@ python main.py process "URL" --language ja --model large-v3
 # Use CPU only (if you don't have a GPU)
 python main.py process "URL" --device cpu
 
-# Run specific stages
+# Run specific stages only
 python main.py process "URL" --stages download --stages transcribe
+
+# Skip LLM refinement (faster, but less accurate)
+python main.py process "URL" --stages download --stages separate --stages transcribe
 
 # Use custom config file
 python main.py process "URL" --config my_config.yaml
@@ -136,7 +174,8 @@ python main.py process "URL" --config my_config.yaml
 
 After processing, you'll find:
 - `data/raw/`: Original video and audio files
-- `data/subs/`: Transcription JSON with timestamps
+- `data/stems/`: Separated vocal and instrumental tracks
+- `data/subs/`: Raw and refined transcription JSON files with timestamps
 - Logs: Console output with processing details
 
 ## ⚙️ Configuration
@@ -146,12 +185,26 @@ Edit `config/settings.yaml` to customize:
 ### Key Settings
 
 ```yaml
+# Vocal separation settings (Milestone 2)
+separator:
+  enabled: true
+  model: "htdemucs"        # htdemucs, htdemucs_ft, mdx_extra
+  device: "auto"           # auto, cuda, cpu (MPS not supported by Demucs)
+  split: true              # Split audio to save VRAM
+
 # Transcription settings
 transcriber:
   model: "large-v3"        # tiny, base, small, medium, large-v2, large-v3
   language: "ja"           # ISO 639-1 code, null for auto-detection
   device: "auto"           # auto, cuda, mps, cpu
   vad_filter: true         # Voice Activity Detection
+
+# LLM refinement settings (Milestone 2)
+refiner:
+  enabled: true
+  base_url: "http://localhost:11434"  # Ollama server URL
+  model: "llama3.2:latest"            # Ollama model name
+  temperature: 0.3                     # Lower = more deterministic
 
 # GPU settings
 gpu:
@@ -201,18 +254,19 @@ def create_my_processor(context, logger):
 
 ## 🗺️ Roadmap
 
-### ✅ Milestone 1: The Backbone (Current)
+### ✅ Milestone 1: The Backbone
 - [x] Video download (yt-dlp)
 - [x] Audio transcription (Faster-Whisper)
 - [x] Modular architecture
 - [x] GPU management
 - [x] CLI interface
 
-### 🚧 Milestone 2: The Ear & The Brain
-- [ ] Vocal separation (Demucs)
-- [ ] LLM refinement (Ollama)
-- [ ] Timestamp alignment
-- [ ] Multi-language support enhancement
+### ✅ Milestone 2: The Ear & The Brain
+- [x] Vocal separation (Demucs)
+- [x] LLM refinement (Ollama)
+- [x] Timestamp preservation and alignment
+- [x] Smart memory management for multiple models
+- [x] Batch processing with contextual awareness
 
 ### 📋 Milestone 3: The Artist
 - [ ] ASS subtitle generation with styling

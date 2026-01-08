@@ -9,8 +9,8 @@ pydantic>=2.0.0
 rich>=13.0.0
 click>=8.1.0
 
-# Optional: Stem separation (heavy dependency, install separately if needed)
-# demucs>=4.0.0
+# Milestone 2: Audio separation and LLM refinement
+demucs>=4.0.0
 
 # Optional: WhisperX (alternative to faster-whisper with better alignment)
 # whisperx>=3.0.0
