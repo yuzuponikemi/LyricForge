@@ -50,6 +50,12 @@ class ProcessingContext:
     refined_transcript_path: Optional[Path] = None
     subtitle_path: Optional[Path] = None
     output_video_path: Optional[Path] = None
+    lyrics_file_path: Optional[Path] = None
+
+    # Lyrics data (for forced alignment)
+    lyrics_text: Optional[str] = None
+    artist: Optional[str] = None
+    song_title: Optional[str] = None
 
     # Metadata (extracted during processing)
     metadata: Dict[str, Any] = field(default_factory=dict)

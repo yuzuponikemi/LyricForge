@@ -8,8 +8,10 @@ Implements the Pipeline Pattern with clear separation of concerns.
 from typing import Any, Dict, Optional
 
 from core.context import ProcessingContext, create_context
+from modules.aligner import Aligner, create_aligner
 from modules.calibrator import Calibrator, create_calibrator
 from modules.downloader import Downloader, create_downloader
+from modules.lyrics_fetcher import LyricsFetcher, create_lyrics_fetcher
 from modules.refiner import Refiner, create_refiner
 from modules.separator import Separator, create_separator
 from modules.transcriber import Transcriber, create_transcriber
@@ -129,6 +131,8 @@ class PipelineManager:
             self._stage_separate(context, logger)
         elif stage == "transcribe":
             self._stage_transcribe(context, logger)
+        elif stage == "align":
+            self._stage_align(context, logger)
         elif stage == "refine":
             self._stage_refine(context, logger)
         elif stage == "subtitle":
@@ -251,6 +255,62 @@ class PipelineManager:
         context.update_metadata("calibration_preset", result.get("name"))
         context.update_metadata("calibration_score", result.get("score"))
 
+    def _stage_align(
+        self,
+        context: ProcessingContext,
+        logger: ContextualLogger,
+    ) -> None:
+        """
+        Execute forced alignment stage with known lyrics.
+
+        Args:
+            context: Processing context
+            logger: Contextual logger
+        """
+        # Get lyrics information from config
+        lyrics_config = context.config.get("lyrics", {})
+
+        lyrics_file_str = lyrics_config.get("file")
+        artist = lyrics_config.get("artist")
+        song_title = lyrics_config.get("song_title")
+
+        # Convert to Path if string
+        from pathlib import Path as PathLib
+        lyrics_file = PathLib(lyrics_file_str) if lyrics_file_str else None
+
+        # Set in context
+        if lyrics_file:
+            context.lyrics_file_path = lyrics_file
+        if artist:
+            context.artist = artist
+        if song_title:
+            context.song_title = song_title
+
+        # Fetch lyrics if not already available
+        if not context.lyrics_text:
+            fetcher = create_lyrics_fetcher(context, logger)
+
+            try:
+                lyrics_text = fetcher.fetch(
+                    lyrics_file=context.lyrics_file_path,
+                    artist=context.artist,
+                    song_title=context.song_title,
+                )
+                context.lyrics_text = lyrics_text
+            except Exception as e:
+                logger.error(f"Failed to fetch lyrics: {e}")
+                raise PipelineError(
+                    "Forced alignment requires lyrics. "
+                    "Use --lyrics-file or --artist + --song-title"
+                ) from e
+
+        # Run forced alignment
+        aligner = create_aligner(context, logger, self.gpu_manager)
+        result = aligner.align(context.lyrics_text)
+
+        # Context is already updated by aligner
+        logger.debug("Forced alignment result saved", path=str(result.get("path")))
+
     def _log_system_info(self, logger: ContextualLogger) -> None:
         """
         Log system and GPU information.
@@ -305,6 +365,9 @@ def run_pipeline(
     config_path: str = "config/settings.yaml",
     stages: Optional[list[str]] = None,
     config_overrides: Optional[Dict[str, Any]] = None,
+    lyrics_file: Optional[Path] = None,
+    artist: Optional[str] = None,
+    song_title: Optional[str] = None,
 ) -> ProcessingContext:
     """
     Convenience function to run the pipeline.
@@ -314,9 +377,24 @@ def run_pipeline(
         config_path: Path to configuration file
         stages: List of stages to execute
         config_overrides: Optional configuration overrides
+        lyrics_file: Optional path to lyrics file for forced alignment
+        artist: Optional artist name for lyrics search
+        song_title: Optional song title for lyrics search
 
     Returns:
         ProcessingContext with results
     """
+    # Pass lyrics information via config_overrides
+    if lyrics_file or artist or song_title:
+        if config_overrides is None:
+            config_overrides = {}
+        config_overrides.setdefault("lyrics", {})
+        if lyrics_file:
+            config_overrides["lyrics"]["file"] = str(lyrics_file)
+        if artist:
+            config_overrides["lyrics"]["artist"] = artist
+        if song_title:
+            config_overrides["lyrics"]["song_title"] = song_title
+
     pipeline = create_pipeline(config_path, config_overrides)
     return pipeline.process(url, stages)

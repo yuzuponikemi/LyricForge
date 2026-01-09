@@ -77,6 +77,16 @@ calibrator:
     - noisy
     - fast
 
+# Lyrics Fetcher settings (Milestone 3 - Forced Alignment)
+lyrics_fetcher:
+  provider: "genius"  # Options: genius, manual
+  genius_api_key: null  # Get from https://genius.com/api-clients (optional)
+
+# Forced Alignment settings (Milestone 3)
+aligner:
+  method: "whisper_based"  # Use Whisper timing with known lyrics
+  min_confidence: 0.3  # Minimum confidence for accepting alignment
+
 # Subtitle generation settings
 subtitles:
   format: "srt"  # Options: srt, ass, vtt

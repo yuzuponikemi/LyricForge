@@ -24,6 +24,13 @@ LyricForge is a modular, production-grade application for extracting, refining, 
 - **Batch Processing**: Efficient processing with contextual awareness
 - **Quality Metrics**: SNR analysis and transcription quality scoring
 
+#### Milestone 2.5: Forced Alignment ✅
+- **Lyrics Fetching**: Load lyrics from file or fetch from API (Genius)
+- **Supervised Alignment**: Use known lyrics with Whisper timing for higher accuracy
+- **Sequence Matching**: Intelligent alignment of lyrics to audio segments
+- **Confidence Scoring**: Quality metrics for each aligned segment
+- **Flexible Input**: Support for manual lyrics files or artist/song search
+
 ### Upcoming
 
 - **Milestone 3**: ASS subtitle styling + FFmpeg video composition
@@ -38,8 +45,15 @@ LyricForge implements a **Pipeline Pattern** with independent, composable module
 │  Downloader │ -> │ Separator │ -> │ Transcriber  │ -> │ Refiner  │
 │   (yt-dlp)  │    │ (Demucs)  │    │  (Whisper)   │    │ (Ollama) │
 └─────────────┘    └───────────┘    └──────────────┘    └──────────┘
-                                                               │
-                                                               v
+                                           │                     │
+                        ┌──────────────────┴─────────────────────┘
+                        v
+                 ┌─────────────┐
+                 │   Aligner   │ (Optional: Forced Alignment)
+                 │  (Lyrics)   │
+                 └─────────────┘
+                        │
+                        v
 ┌─────────────┐    ┌───────────────────────────────────────────┐
 │   Output    │ <- │         Compositor (FFmpeg)               │
 │             │    │                                           │
@@ -60,6 +74,9 @@ LyricForge/
 │   ├── separator.py     # Demucs wrapper (M2)
 │   ├── transcriber.py   # Faster-Whisper wrapper
 │   ├── refiner.py       # Ollama LLM client (M2)
+│   ├── calibrator.py    # Auto-calibration (M2.5)
+│   ├── lyrics_fetcher.py # Lyrics fetching (M2.5)
+│   ├── aligner.py       # Forced alignment (M2.5)
 │   └── compositor.py    # FFmpeg wrapper (M3)
 ├── utils/               # Utilities
 │   ├── logger.py        # Structured logging
@@ -174,6 +191,12 @@ python main.py process "URL" --stages download --stages calibrate --stages separ
 # Skip LLM refinement (faster, but less accurate)
 python main.py process "URL" --stages download --stages separate --stages transcribe
 
+# Use forced alignment with lyrics file (maximum accuracy)
+python main.py process "URL" --lyrics-file lyrics.txt --stages download --stages align
+
+# Use forced alignment with artist/song search
+python main.py process "URL" --artist "Artist" --song-title "Song" --stages download --stages align
+
 # Use custom config file
 python main.py process "URL" --config my_config.yaml
 ```
@@ -206,6 +229,49 @@ python main.py process "URL" --auto-calibrate
 - **Live**: Higher quality settings for live performances
 - **Noisy**: Maximum quality for challenging audio
 - **Fast**: Minimal processing for speed
+
+### 🎯 Forced Alignment Mode
+
+When you know the exact lyrics (e.g., for popular songs), use **forced alignment** for maximum accuracy. Instead of fully automatic transcription, LyricForge aligns known lyrics with Whisper's timing information:
+
+```bash
+# Option 1: Provide a lyrics file
+python main.py process "URL" --lyrics-file lyrics.txt --stages download --stages align
+
+# Option 2: Use artist and song name (requires API key in config)
+python main.py process "URL" --artist "Artist Name" --song-title "Song Title" --stages download --stages align
+```
+
+**How it works:**
+1. Fetches known lyrics from file or API (Genius)
+2. Uses Whisper to extract word-level timing from audio
+3. Aligns correct lyrics with timing using sequence matching
+4. Outputs perfectly accurate lyrics with precise timestamps
+
+**When to use:**
+- ✅ When you know the song and can find the lyrics
+- ✅ For maximum accuracy (no transcription errors)
+- ✅ When automatic transcription produces poor results
+- ✅ For songs with rapid vocals or complex lyrics
+- ✅ When dealing with multiple languages or dialects
+
+**Comparison: Automatic vs. Forced Alignment**
+
+| Mode | Use Case | Accuracy | Speed | Requires Lyrics |
+|------|----------|----------|-------|-----------------|
+| **Automatic** | Unknown content, speech | Good | Fast | No |
+| **Forced Alignment** | Known songs | Excellent | Faster | Yes |
+
+**Lyrics file format:**
+```txt
+First line of lyrics
+Second line of lyrics
+
+New verse after blank line
+Another line
+```
+
+The lyrics file should contain plain text, one line per phrase. Section markers like `[Verse]` or `[Chorus]` are automatically removed.
 
 ### Output
 
@@ -242,6 +308,16 @@ refiner:
   base_url: "http://localhost:11434"  # Ollama server URL
   model: "llama3.2:latest"            # Ollama model name
   temperature: 0.3                     # Lower = more deterministic
+
+# Lyrics fetching settings (Milestone 2.5 - Forced Alignment)
+lyrics_fetcher:
+  provider: "genius"                   # genius or manual
+  genius_api_key: null                 # Get from https://genius.com/api-clients
+
+# Forced alignment settings (Milestone 2.5)
+aligner:
+  method: "whisper_based"              # Use Whisper timing with known lyrics
+  min_confidence: 0.3                  # Minimum confidence for accepting alignment
 
 # GPU settings
 gpu:
@@ -304,6 +380,13 @@ def create_my_processor(context, logger):
 - [x] Timestamp preservation and alignment
 - [x] Smart memory management for multiple models
 - [x] Batch processing with contextual awareness
+
+### ✅ Milestone 2.5: Forced Alignment & Auto-Calibration
+- [x] Auto-calibration for optimal parameter tuning
+- [x] Lyrics fetching from file or API
+- [x] Forced alignment with known lyrics
+- [x] Sequence matching for accurate timing
+- [x] Confidence scoring for alignment quality
 
 ### 📋 Milestone 3: The Artist
 - [ ] ASS subtitle generation with styling

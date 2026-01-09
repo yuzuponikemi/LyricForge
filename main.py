@@ -15,7 +15,7 @@ from core.pipeline import run_pipeline
 
 
 @click.group()
-@click.version_option(version="0.2.5", prog_name="LyricForge")
+@click.version_option(version="0.3.0", prog_name="LyricForge")
 def cli():
     """
     LyricForge - The Lyric Foundry
@@ -38,7 +38,7 @@ def cli():
     "--stages",
     "-s",
     multiple=True,
-    type=click.Choice(["download", "calibrate", "separate", "transcribe", "refine", "subtitle", "compose"]),
+    type=click.Choice(["download", "calibrate", "separate", "transcribe", "align", "refine", "subtitle", "compose"]),
     help="Stages to execute (can be specified multiple times)",
 )
 @click.option(
@@ -71,6 +71,21 @@ def cli():
     is_flag=True,
     help="Automatically calibrate parameters by analyzing a 30s sample",
 )
+@click.option(
+    "--lyrics-file",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to lyrics text file for forced alignment",
+)
+@click.option(
+    "--artist",
+    type=str,
+    help="Artist name (for API lyrics search)",
+)
+@click.option(
+    "--song-title",
+    type=str,
+    help="Song title (for API lyrics search)",
+)
 def process(
     url: str,
     config: Path,
@@ -80,6 +95,9 @@ def process(
     device: Optional[str],
     output_dir: Optional[Path],
     auto_calibrate: bool,
+    lyrics_file: Optional[Path],
+    artist: Optional[str],
+    song_title: Optional[str],
 ):
     """
     Process a video URL through the LyricForge pipeline.
@@ -148,6 +166,9 @@ def process(
             config_path=str(config),
             stages=stages_list,
             config_overrides=config_overrides,
+            lyrics_file=lyrics_file,
+            artist=artist,
+            song_title=song_title,
         )
 
         # Display results
@@ -208,7 +229,7 @@ def version():
     """
     Display version information.
     """
-    click.echo("LyricForge v0.2.5")
+    click.echo("LyricForge v0.3.0")
     click.echo("The Lyric Foundry - AI-Powered Video Transcription")
     click.echo()
     click.echo("Milestone 1: The Backbone ✅")
@@ -218,7 +239,11 @@ def version():
     click.echo("Milestone 2: The Ear & The Brain ✅")
     click.echo("  - Vocal separation (Demucs)")
     click.echo("  - LLM refinement (Ollama)")
+    click.echo()
+    click.echo("Milestone 2.5: Forced Alignment & Auto-Calibration ✅")
     click.echo("  - Auto-calibration for optimal parameters")
+    click.echo("  - Lyrics fetching from file or API")
+    click.echo("  - Forced alignment with known lyrics")
     click.echo()
     click.echo("Upcoming:")
     click.echo("  - Milestone 3: ASS subtitles + FFmpeg composition")
