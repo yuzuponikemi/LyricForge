@@ -125,6 +125,13 @@ def process(
         # Convert stages tuple to list
         stages_list = list(stages) if stages else None
 
+        # Set default stages for forced alignment mode
+        if lyrics_file or artist or song_title:
+            if stages_list is None:
+                # Forced alignment mode: download + align (align includes separation internally)
+                stages_list = ["download", "align"]
+                click.echo("🎵 Forced alignment mode enabled")
+
         # Add calibration stage if auto-calibrate is enabled
         if auto_calibrate:
             if stages_list is None:
@@ -182,8 +189,12 @@ def process(
             click.echo(f"   Video: {context.raw_video_path}")
         if context.raw_audio_path and context.raw_audio_path.exists():
             click.echo(f"   Audio: {context.raw_audio_path}")
+        if context.vocal_stem_path and context.vocal_stem_path.exists():
+            click.echo(f"   Vocals: {context.vocal_stem_path}")
         if context.raw_transcript_path and context.raw_transcript_path.exists():
             click.echo(f"   Transcript: {context.raw_transcript_path}")
+        if context.refined_transcript_path and context.refined_transcript_path.exists():
+            click.echo(f"   Aligned: {context.refined_transcript_path}")
         if context.subtitle_path and context.subtitle_path.exists():
             click.echo(f"   Subtitles: {context.subtitle_path}")
         if context.output_video_path and context.output_video_path.exists():

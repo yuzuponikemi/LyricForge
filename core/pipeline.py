@@ -5,6 +5,7 @@ Orchestrates the entire processing flow from download to final output.
 Implements the Pipeline Pattern with clear separation of concerns.
 """
 
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from core.context import ProcessingContext, create_context

@@ -6,6 +6,7 @@ This is more accurate than pure transcription when lyrics are already known.
 """
 
 import json
+import re
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -14,6 +15,12 @@ from core.context import ProcessingContext
 from modules.transcriber import create_transcriber
 from utils.gpu_manager import GPUManager
 from utils.logger import ContextualLogger
+
+# Pattern to match section markers like [Verse 1], [Chorus], [Refrain], etc.
+SECTION_MARKER_PATTERN = re.compile(
+    r'^\s*\[(?:Verse|Chorus|Refrain|Bridge|Intro|Outro|Hook|Pre-Chorus|Post-Chorus|Interlude|Break|Solo|Instrumental|Tag|Coda|Ad[- ]?lib|Repeat|\d+|[A-Za-z]+\s*\d*)\s*\d*\]\s*$',
+    re.IGNORECASE
+)
 
 
 class AlignmentError(Exception):
@@ -46,10 +53,75 @@ class Aligner:
         self.gpu_manager = gpu_manager
         self.config = context.config.get("aligner", {})
 
+    def _run_vocal_separation(self) -> Optional[Path]:
+        """
+        Run vocal separation to get cleaner audio for alignment.
+
+        Returns:
+            Path to vocal stem, or None if separation fails
+        """
+        try:
+            from modules.separator import create_separator
+
+            self.logger.info("Running vocal separation for better alignment")
+            separator = create_separator(self.context, self.logger, self.gpu_manager)
+            result = separator.separate()
+
+            vocal_path = result.get("vocals")
+            if vocal_path and vocal_path.exists():
+                self.logger.info("Vocal separation completed", path=str(vocal_path))
+                return vocal_path
+            else:
+                self.logger.warning("Vocal separation did not produce output, using raw audio")
+                return self.context.raw_audio_path
+
+        except Exception as e:
+            self.logger.warning(f"Vocal separation failed, using raw audio: {e}")
+            return self.context.raw_audio_path
+
+    def _is_section_marker(self, line: str) -> bool:
+        """
+        Check if a line is a section marker like [Verse 1], [Chorus], etc.
+
+        Args:
+            line: Line to check
+
+        Returns:
+            True if line is a section marker
+        """
+        return bool(SECTION_MARKER_PATTERN.match(line.strip()))
+
+    def _filter_lyrics_lines(self, lyrics_text: str) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """
+        Filter lyrics text into actual lyrics and section markers.
+
+        Args:
+            lyrics_text: Raw lyrics text
+
+        Returns:
+            Tuple of (lyrics_lines, section_markers)
+            section_markers contains {index, text} for reinsertion
+        """
+        all_lines = [line.strip() for line in lyrics_text.split("\n")]
+        lyrics_lines = []
+        section_markers = []
+
+        for i, line in enumerate(all_lines):
+            if not line:
+                continue
+            if self._is_section_marker(line):
+                section_markers.append({"original_index": i, "text": line})
+                self.logger.debug(f"Filtered section marker: {line}")
+            else:
+                lyrics_lines.append(line)
+
+        return lyrics_lines, section_markers
+
     def align(
         self,
         lyrics_text: str,
         audio_path: Optional[Path] = None,
+        run_separation: bool = True,
     ) -> Dict[str, Any]:
         """
         Align known lyrics with audio.
@@ -57,6 +129,7 @@ class Aligner:
         Args:
             lyrics_text: Known lyrics text
             audio_path: Audio file path (uses context if not provided)
+            run_separation: Whether to run vocal separation if no vocal stem exists
 
         Returns:
             Dictionary with aligned segments
@@ -68,6 +141,10 @@ class Aligner:
             # Use vocal stem if available
             if self.context.vocal_stem_path and self.context.vocal_stem_path.exists():
                 audio_path = self.context.vocal_stem_path
+                self.logger.info("Using existing vocal stem", path=str(audio_path))
+            elif run_separation and self.context.raw_audio_path:
+                # Run vocal separation first for better alignment
+                audio_path = self._run_vocal_separation()
             else:
                 audio_path = self.context.raw_audio_path
 
@@ -126,11 +203,14 @@ class Aligner:
         Returns:
             Aligned segments with correct text and timing
         """
-        # Split lyrics into lines
-        lyrics_lines = [line.strip() for line in lyrics_text.split("\n") if line.strip()]
+        # Filter out section markers and get clean lyrics lines
+        lyrics_lines, section_markers = self._filter_lyrics_lines(lyrics_text)
 
-        # Extract Whisper text
-        whisper_text = " ".join([seg.get("text", "").strip() for seg in whisper_segments])
+        if section_markers:
+            self.logger.info(
+                f"Filtered {len(section_markers)} section markers from lyrics",
+                markers=[m["text"] for m in section_markers],
+            )
 
         self.logger.debug(
             "Aligning lyrics",
@@ -138,10 +218,8 @@ class Aligner:
             whisper_segments=len(whisper_segments),
         )
 
-        # Use sequence matching to align lyrics with Whisper output
         aligned_segments = []
 
-        # Simple strategy: distribute lyrics lines across Whisper segments
         if not whisper_segments:
             # No timing available, create segments with placeholder timing
             for i, line in enumerate(lyrics_lines):
@@ -153,8 +231,8 @@ class Aligner:
                     "source": "manual",
                 })
         else:
-            # Match lyrics lines to Whisper segments using edit distance
-            lyrics_to_segments = self._match_lyrics_to_segments(
+            # Use order-preserving matching algorithm
+            lyrics_to_segments = self._match_lyrics_to_segments_ordered(
                 lyrics_lines, whisper_segments
             )
 
@@ -171,69 +249,114 @@ class Aligner:
 
         return aligned_segments
 
-    def _match_lyrics_to_segments(
+    def _match_lyrics_to_segments_ordered(
         self,
         lyrics_lines: List[str],
         whisper_segments: List[Dict[str, Any]],
     ) -> List[Tuple[str, Dict[str, Any]]]:
         """
-        Match lyrics lines to Whisper segments.
+        Match lyrics lines to Whisper segments while preserving order.
+
+        Uses dynamic programming to find the optimal alignment that
+        maintains the temporal order of both lyrics and audio segments.
 
         Args:
             lyrics_lines: List of lyrics lines
-            whisper_segments: List of Whisper segments
+            whisper_segments: List of Whisper segments (sorted by time)
 
         Returns:
-            List of (lyrics_line, whisper_segment) pairs
+            List of (lyrics_line, whisper_segment) pairs in order
         """
-        matched_pairs = []
+        n_lyrics = len(lyrics_lines)
+        n_segments = len(whisper_segments)
+
+        if n_lyrics == 0:
+            return []
+
+        if n_segments == 0:
+            # No Whisper segments, create placeholder timing
+            return [
+                (line, {"start": i * 3.0, "end": (i + 1) * 3.0, "text": ""})
+                for i, line in enumerate(lyrics_lines)
+            ]
+
+        # Sort segments by start time to ensure order
+        sorted_segments = sorted(whisper_segments, key=lambda s: s.get("start", 0))
 
         # Calculate similarity matrix
         similarity_matrix = []
         for lyrics_line in lyrics_lines:
             row = []
-            for segment in whisper_segments:
+            for segment in sorted_segments:
                 whisper_text = segment.get("text", "").strip()
                 similarity = self._text_similarity(lyrics_line, whisper_text)
                 row.append(similarity)
             similarity_matrix.append(row)
 
-        # Greedy matching: for each lyrics line, find best matching segment
-        used_segments = set()
+        # Dynamic programming to find best order-preserving alignment
+        # dp[i][j] = best score for aligning lyrics[0:i] with segments[0:j]
+        # We allow skipping segments but not lyrics lines
+        INF = float('-inf')
+        dp = [[INF] * (n_segments + 1) for _ in range(n_lyrics + 1)]
+        parent = [[None] * (n_segments + 1) for _ in range(n_lyrics + 1)]
 
-        for i, lyrics_line in enumerate(lyrics_lines):
-            best_similarity = 0
-            best_segment_idx = None
+        dp[0][0] = 0
 
-            for j, similarity in enumerate(similarity_matrix[i]):
-                if j not in used_segments and similarity > best_similarity:
-                    best_similarity = similarity
-                    best_segment_idx = j
+        for i in range(n_lyrics + 1):
+            for j in range(n_segments + 1):
+                if dp[i][j] == INF:
+                    continue
 
-            if best_segment_idx is not None:
-                matched_pairs.append((lyrics_line, whisper_segments[best_segment_idx]))
-                used_segments.add(best_segment_idx)
-            else:
-                # No good match, use interpolated timing
-                if matched_pairs:
-                    last_end = matched_pairs[-1][1]["end"]
+                # Option 1: Skip this segment (if j < n_segments)
+                if j < n_segments and dp[i][j + 1] < dp[i][j]:
+                    dp[i][j + 1] = dp[i][j]
+                    parent[i][j + 1] = (i, j, "skip")
+
+                # Option 2: Match lyrics[i] with segment[j] (if both available)
+                if i < n_lyrics and j < n_segments:
+                    score = dp[i][j] + similarity_matrix[i][j]
+                    if score > dp[i + 1][j + 1]:
+                        dp[i + 1][j + 1] = score
+                        parent[i + 1][j + 1] = (i, j, "match")
+
+        # Find best ending position (all lyrics must be matched)
+        best_j = 0
+        best_score = INF
+        for j in range(n_segments + 1):
+            if dp[n_lyrics][j] > best_score:
+                best_score = dp[n_lyrics][j]
+                best_j = j
+
+        # Backtrack to find the alignment
+        matched_pairs = []
+        i, j = n_lyrics, best_j
+
+        while i > 0 or j > 0:
+            if parent[i][j] is None:
+                break
+            pi, pj, action = parent[i][j]
+            if action == "match":
+                matched_pairs.append((lyrics_lines[pi], sorted_segments[pj]))
+            i, j = pi, pj
+
+        matched_pairs.reverse()
+
+        # If some lyrics weren't matched (shouldn't happen but handle gracefully)
+        if len(matched_pairs) < n_lyrics:
+            self.logger.warning(
+                f"Only matched {len(matched_pairs)}/{n_lyrics} lyrics lines, "
+                "using interpolation for remaining"
+            )
+            matched_set = set(line for line, _ in matched_pairs)
+            last_end = matched_pairs[-1][1]["end"] if matched_pairs else 0
+
+            for line in lyrics_lines:
+                if line not in matched_set:
                     matched_pairs.append((
-                        lyrics_line,
-                        {
-                            "start": last_end,
-                            "end": last_end + 3.0,
-                            "text": "",
-                        },
+                        line,
+                        {"start": last_end, "end": last_end + 3.0, "text": ""},
                     ))
-                else:
-                    matched_pairs.append((
-                        lyrics_line,
-                        {
-                            "start": i * 3.0,
-                            "end": (i + 1) * 3.0,
-                            "text": "",
-                        },
-                    ))
+                    last_end += 3.0
 
         return matched_pairs
 
