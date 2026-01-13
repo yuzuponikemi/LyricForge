@@ -1,0 +1,16 @@
+# Core dependencies
+yt-dlp>=2024.0.0
+faster-whisper>=1.0.0
+torch>=2.0.0
+torchaudio>=2.0.0
+pyyaml>=6.0
+requests>=2.31.0
+pydantic>=2.0.0
+rich>=13.0.0
+click>=8.1.0
+
+# Milestone 2: Audio separation and LLM refinement
+demucs>=4.0.0
+
+# Optional: WhisperX (alternative to faster-whisper with better alignment)
+# whisperx>=3.0.0

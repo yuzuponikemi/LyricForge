@@ -1,0 +1,78 @@
+[project]
+name = "lyric-forge"
+version = "0.3.0"
+description = "A modular pipeline for video lyric extraction, refinement, and subtitle generation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    {name = "LyricForge Team"}
+]
+keywords = ["lyrics", "transcription", "whisper", "llm", "subtitles", "music"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "yt-dlp>=2024.0.0",
+    "faster-whisper>=1.0.0",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "pyyaml>=6.0",
+    "requests>=2.31.0",
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "click>=8.1.0",
+    "demucs>=4.0.0",
+    "soundfile>=0.13.1",
+    "scipy>=1.15.3",
+]
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["core", "config", "modules", "utils"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.7.0",
+    "ruff>=0.0.285",
+    "mypy>=1.5.0",
+]
+separator = [
+    "demucs>=4.0.0",
+]
+whisperx = [
+    "whisperx>=3.0.0",
+]
+
+[project.scripts]
+lyric-forge = "main:main"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
